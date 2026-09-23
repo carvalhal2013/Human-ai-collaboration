@@ -1,10 +1,10 @@
-"""Riddle guessing game: the LLM picks a secret topic, writes 3 riddles about it,
-and the player guesses the topic. The LLM then judges and explains the answer."""
+"""Riddle guessing game: the player picks a category, the LLM picks a secret topic
+in it and gives one riddle at a time. The player has 3 attempts to guess it."""
 
-import random
 from openai import OpenAI
 
 client = OpenAI()  # reads OPENAI_API_KEY from the environment
+MAX_ATTEMPTS = 3
 
 
 def call_gpt(prompt, temperature=0.7):
@@ -16,32 +16,55 @@ def call_gpt(prompt, temperature=0.7):
     return response.choices[0].message.content.strip()
 
 
-# 1. Auto-generate a secret topic. A random category keeps the LLM from
-#    picking the same topic every run.
-category = random.choice(["animals", "food", "household objects", "nature", "jobs", "sports", "musical instruments"])
+# 1. The player chooses the category; the LLM picks a secret topic in it.
+category = input("Choose a category (e.g. animals, food, sports): ")
 topic = call_gpt(
     f"Pick one common, concrete thing from the category '{category}'. "
     f"Reply with only the name, one or two words, no punctuation.",
     temperature=1.0,
 )
 
-# 2. Ask for 3 different riddles about that topic, without revealing it.
-riddles = call_gpt(
-    f"Write 3 different short riddles whose answer is '{topic}'. "
-    f"Each riddle must use a different clue (e.g. appearance, use, sound). "
-    f"Never mention the word '{topic}'. Number them 1-3 and give no answers."
-)
-print(f"\nHere are 3 riddles, all about the same thing:\n\n{riddles}\n")
+riddles = []
+for attempt in range(1, MAX_ATTEMPTS + 1):
+    # 2. One new riddle per attempt, each easier than the last.
+    riddle = call_gpt(
+        f"Write one short riddle whose answer is '{topic}'. "
+        f"Never mention the word '{topic}'. Give no answer. "
+        f"It must use a different clue from these earlier riddles and be easier "
+        f"than them: {riddles if riddles else 'none yet'}"
+    )
+    riddles.append(riddle)
+    print(f"\nRiddle {attempt} of {MAX_ATTEMPTS}:\n{riddle}\n")
 
-# 3. Get the player's guess.
-guess = input("What is the topic? ")
+    guess = input("Your guess: ")
 
-# 4. Let the LLM judge the guess and explain.
-feedback = call_gpt(
-    f"The secret topic was '{topic}'. The riddles were:\n{riddles}\n\n"
-    f"The player guessed '{guess}'. "
-    f"Start with 'Correct!' or 'Not quite.' (accept synonyms and close variants). "
-    f"If wrong, explain briefly why the guess doesn't fit the clues. "
-    f"Then reveal the correct answer and explain how each riddle points to it."
-)
-print(f"\n{feedback}")
+    # 3. Strict YES/NO verdict, checked in Python, so the game logic
+    #    doesn't depend on parsing free-form text.
+    verdict = call_gpt(
+        f"The secret answer is '{topic}'. The player guessed '{guess}'. "
+        f"Is the guess the same thing (exact match, synonym or spelling variant)? "
+        f"A related but different thing is NOT correct. Reply only YES or NO.",
+        temperature=0,
+    )
+
+    if verdict.upper().startswith("YES"):
+        print("\n" + call_gpt(
+            f"The player correctly guessed '{topic}' after {attempt} riddle(s): {riddles}. "
+            f"Congratulate them in one sentence, then briefly explain how each riddle points to '{topic}'."
+        ))
+        break
+
+    if attempt < MAX_ATTEMPTS:
+        print("\n" + call_gpt(
+            f"The secret answer is '{topic}' (do NOT reveal it). The riddle was: {riddle}. "
+            f"The player guessed '{guess}', which is wrong. In one or two sentences, "
+            f"explain which clue in the riddle doesn't fit their guess, without giving the answer away."
+        ))
+        print(f"Attempts left: {MAX_ATTEMPTS - attempt}")
+else:
+    # 4. Out of attempts: reveal and explain.
+    print("\n" + call_gpt(
+        f"The player failed to guess '{topic}' in {MAX_ATTEMPTS} attempts. Their last guess was '{guess}'. "
+        f"The riddles were: {riddles}. Tell them the answer was '{topic}', "
+        f"say briefly why their last guess was wrong, and explain how each riddle points to '{topic}'."
+    ))
