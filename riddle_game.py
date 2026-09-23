@@ -24,19 +24,34 @@ topic = call_gpt(
     temperature=1.0,
 )
 
-riddles = []
+riddles, guesses = [], []
 for attempt in range(1, MAX_ATTEMPTS + 1):
-    # 2. One new riddle per attempt, each easier than the last.
-    riddle = call_gpt(
-        f"Write one short riddle whose answer is '{topic}'. "
-        f"Never mention the word '{topic}'. Give no answer. "
-        f"It must use a different clue from these earlier riddles and be easier "
-        f"than them: {riddles if riddles else 'none yet'}"
-    )
+    # 2. One new riddle per attempt. After a wrong guess, the next riddle reacts
+    #    to it: same difficulty, but a new angle that sets the answer apart from the guess.
+    if not guesses:
+        riddle_prompt = (
+            f"Write one short, clever riddle whose answer is '{topic}'. "
+            f"Never mention the word '{topic}'. Give no answer."
+        )
+    else:
+        riddle_prompt = (
+            f"Write one short, clever riddle whose answer is '{topic}'. "
+            f"Never mention the word '{topic}'. Give no answer.\n"
+            f"Earlier riddles: {riddles}\n"
+            f"The player's wrong guesses so far: {guesses}\n"
+            f"Use the guesses: work out what mindset led the player there, then "
+            f"approach '{topic}' from a completely different perspective (e.g. wordplay, "
+            f"speaking as the thing itself, a paradox, its hidden role, a metaphor) "
+            f"and include a clue that is true of '{topic}' but clearly false for "
+            f"'{guesses[-1]}'. Do NOT make it easier than the earlier riddles, "
+            f"and do not reuse their angles."
+        )
+    riddle = call_gpt(riddle_prompt, temperature=0.9)
     riddles.append(riddle)
     print(f"\nRiddle {attempt} of {MAX_ATTEMPTS}:\n{riddle}\n")
 
     guess = input("Your guess: ")
+    guesses.append(guess)
 
     # 3. Strict YES/NO verdict, checked in Python, so the game logic
     #    doesn't depend on parsing free-form text.
@@ -64,7 +79,8 @@ for attempt in range(1, MAX_ATTEMPTS + 1):
 else:
     # 4. Out of attempts: reveal and explain.
     print("\n" + call_gpt(
-        f"The player failed to guess '{topic}' in {MAX_ATTEMPTS} attempts. Their last guess was '{guess}'. "
+        f"The player failed to guess '{topic}' in {MAX_ATTEMPTS} attempts. Their guesses were {guesses}. "
         f"The riddles were: {riddles}. Tell them the answer was '{topic}', "
-        f"say briefly why their last guess was wrong, and explain how each riddle points to '{topic}'."
+        f"explain how each riddle points to '{topic}', and for each guess say briefly "
+        f"which clue it missed."
     ))
